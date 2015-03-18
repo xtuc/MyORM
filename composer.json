@@ -4,9 +4,7 @@
     "require": {
         "php": ">=5.2.4"
     },
-    "autoload": {
-        "psr-4" : {
-            "ORM\\" : "ORM/"
-        }
+    ,"autoload": {
+        "psr-4": {"ORM\\": "ORM/"}
     }
 }
