@@ -1,37 +1,11 @@
 <?php
-
 namespace ORM;
 
 class Common
 {	
-	private $SQLRead;
-	private $SQLWrite;
-	
 	function __construct() {
-
 	}
 
-	protected function sql($database = NULL)
-	{
-		switch ($database) {
-			case "write" :
-				if (empty($this->SQLWrite))
-				{
-					$this->SQLWrite = new \sql(\sql::write);
-				}
-				return $this->SQLWrite;
-			break;
-			default:
-				if (empty($this->SQLRead))
-				{
-					$this->SQLRead = new \sql(\sql::read);
-				}
-
-				return $this->SQLRead;
-			break;
-		}		
-	}
-	
 	protected function makequery($type, $database, $class, $structure)
 	{	
 		//trouver la PK
@@ -39,7 +13,7 @@ class Common
 		{
 			if (isset($field[4]))
 			{
-				if (isset($field[2]) && $field[2] == 2)
+				if ( isset($field[2]) && $field[2] == 2 )
 				{
 					$Key = $thiskey;
 					if (($field[1]!='timestamp')&&($field[1]!='date')&&($field[1]!='datetime')&&($field[1]!='char')&&($field[1]!='varchar')&&($field[1]!='tinyblob')&&($field[1]!='tinytext')&&($field[1]!='blob')&&($field[1]!='text')&&($field[1]!='mediumblob')&&($field[1]!='mediumtext')&&($field[1]!='longblob')&&($field[1]!='longtext')&&($field[1]!='time')&&($field[1]!='enum'))
@@ -54,7 +28,7 @@ class Common
 		{
 			$fields = "";
 			foreach ($structure as $field)
-				if (($field[1] != 'ChildObject')&&($field[1] != 'ParentObject'))
+				if ( isset($field[1]) && ($field[1] != 'ChildObject') && ($field[1] != 'ParentObject') )
 				{
 					$fields.= "`$field[0]` ,";
 				}
@@ -68,7 +42,7 @@ class Common
 			$fields = "";
 			$values = "";
 			foreach ($structure as $field)
-			if (isset($field[1]) && ($field[1] != 'ChildObject')&&($field[1] != 'ParentObject'))
+			if (($field[1] != 'ChildObject')&&($field[1] != 'ParentObject'))
 			{
 				$fields.= "`$field[0]` ,";
 	
@@ -121,6 +95,14 @@ class Common
 		
 		return $query;
 	}
+	
+	function quote($field,$val)
+	{
+		if (($field[1]!='timestamp')&&($field[1]!='date')&&($field[1]!='datetime')&&($field[1]!='char')&&($field[1]!='varchar')&&($field[1]!='tinyblob')&&($field[1]!='tinytext')&&($field[1]!='blob')&&($field[1]!='text')&&($field[1]!='mediumblob')&&($field[1]!='mediumtext')&&($field[1]!='longblob')&&($field[1]!='longtext')&&($field[1]!='time')&&($field[1]!='enum'))
+			return $val;
+		else
+			return "'".addslashes($val)."'";
+	}
 		
 	public function dump($pre = FALSE)
 	{
@@ -137,3 +119,4 @@ class Common
 		}
 	}
 }
+?>
