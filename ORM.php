@@ -33,7 +33,7 @@ class ORM {
 			}
 			else
 			{
-				$sql = new \sql();
+				global $sql;
 
 				if(AUTOGENERATE && $sql->sql_table_exists($classname)) /* Check si il peut etre g�n�rer et siil existe */
 				{
