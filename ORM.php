@@ -2,8 +2,6 @@
 
 namespace ORM;
 
-use ORM\SQL;
-
 class ORM {
 	
 	/**
@@ -11,11 +9,55 @@ class ORM {
 	 */
 	const version = 1.5;
 	
-	protected $localmode = 0;
-	protected $ScreenError = 1;
-	protected $sql;
-	
-	function __construct() {}
+	function __construct() {
+		if (version_compare(phpversion(), '5.3.0', '>=')) {
+			spl_autoload_register(array(__CLASS__, 'autoload'), true, FALSE);
+		} else {
+			spl_autoload_register(array(__CLASS__, 'autoload'));
+		}
+	}
+
+	public static function autoload($classname)
+	{
+		if(strstr($classname, "ORM\\"))
+		{
+			$classname = str_replace("ORM\\", "", $classname);
+			
+			if(file_exists(BLL . "$classname.php")) /* File exists dans le dossier BLL ? */
+			{
+				require BLL . "$classname.php";
+			}
+			elseif(file_exists(DAL . $classname . "_v". ORM::version .".php")) /* File exists dans le dossier DAL ? */
+			{
+				require DAL . $classname . "_v". ORM::version .".php";
+			}
+			else
+			{
+				$sql = new \sql();
+
+				if(AUTOGENERATE && $sql->sql_table_exists($classname)) /* Check si il peut etre g�n�rer et siil existe */
+				{
+					$ORM = new ORM();
+					$content = $ORM->classgenerator($classname);
+					
+					if(ALWAYSAUTOGENERATE)
+					{
+						$content = str_replace("<?php", "", $content);
+						$content = str_replace("?>", "", $content);
+					
+						eval($content);
+					}
+					else 
+					{
+						if($ORM->saveclasstofile($classname ."_v" . ORM::version .".php", $content, DAL))
+						{
+							require(DAL . $classname ."_v". ORM::version .".php");
+						}
+					}
+				}
+			}
+		}
+	}
 	
 	public function saveclasstofile($filename,$filecontent,$directory)
 	{
@@ -39,13 +81,13 @@ class ORM {
 	
 	function classgenerator($table)
 	{		
-		$sqlconnect = new SQL\SQL();
+		global ${"".SQL};
+		$sqlormconnect = ${"".SQL};
 
-		$select = "sql";
-		if (defined(SQL2))
-			$save = "sql";
-		else
-			$save = "sql";
+		$select = SQL;
+		$save = SQL2;
+		if (!isset($save))
+			$save = SQL;
 	
 		$relation = RELATION;
 		$cascade = CASCADE;
@@ -59,12 +101,11 @@ class ORM {
 		$key = "";
 		$childobject  ="";
 		
-		$table_relation_exists = ($sqlconnect->sql_table_exists($relation)) ? TRUE : FALSE;
+		$table_relation_exists = ($sqlormconnect->sql_table_exists($relation)) ? TRUE : FALSE;
 	
 $c = "<?php
 namespace ORM;
-		
-use ORM\SQL;
+
 use ORM\Exception\DALException;
 		
 	/*
@@ -75,7 +116,7 @@ use ORM\Exception\DALException;
 	* Generator : ORMGEN by PLATEL Renaud generated on ". gethostname() ."
 	* Date Generated : ".date("d.m.Y H")."h
 	* File name : $class.php
-	* Table : ".$sqlconnect->get_Database().".$table 
+	* Table : ".$sqlormconnect->get_Database().".$table 
 	* -----------------------------------------------------------------------------------
 	*/
 	
@@ -90,9 +131,8 @@ class $class extends Common
 		/**
 		 * Generate variables
 		 */
-
-				$result = $sqlconnect->sql_query("SHOW COLUMNS FROM $table");
-				while ($row = $sqlconnect->sql_fetch_object($result))
+				$result = $sqlormconnect->sql_query("SHOW COLUMNS FROM  `".$table."`");
+				while ($row = $sqlormconnect->sql_fetch_object($result))
 				{
 					$col = $row->Field;
 					if (strpos($row->Type,"("))
@@ -107,7 +147,7 @@ class $class extends Common
 					if($row->Key == "PRI")
 					{
 						$c.= "
-	private $$col; // PRI
+	protected $$col; // PRI
 	const $col = '$col'; // PRI
 	const primary_key = '$col'; // PRI";
 						if ($type!="int")
@@ -118,7 +158,7 @@ class $class extends Common
 					else
 					{
 						$c.= "
-	private $$col;
+	protected $$col;
 	const $col = '$col';";
 					}
 					$interface[$col] = array($col, $type, $isnull, 0);
@@ -135,11 +175,11 @@ class $class extends Common
 				/* Relations for relation table of your database or foreign keys */
 				if ($table_relation_exists)
 				{
-					$sql="SELECT TABLE_SCHEMA, TABLE_NAME, COLUMN_NAME, REFERENCED_TABLE_SCHEMA, REFERENCED_TABLE_NAME ,REFERENCED_COLUMN_NAME FROM ".$relation." WHERE TABLE_NAME = '".$table."'";
-					$result = $sqlconnect->sql_query($sql);
+					$sqlorm="SELECT TABLE_SCHEMA, TABLE_NAME, COLUMN_NAME, REFERENCED_TABLE_SCHEMA, REFERENCED_TABLE_NAME ,REFERENCED_COLUMN_NAME FROM ".$relation." WHERE TABLE_NAME = '".$table."'";
+					$result = $sqlormconnect->sql_query($sqlorm);
 					$i=0;
 					
-					while ($row = $sqlconnect->sql_fetch_object($result))
+					while ($row = $sqlormconnect->sql_fetch_object($result))
 					{					
 						$parentvar="Parent".str_replace ( "Id" , "" , str_replace ( "id" , "" , str_replace ( "ID" , "" , $row->COLUMN_NAME )));
 						$interface[$parentvar] = array($parentvar, "ParentObject", 1, 0);
@@ -151,11 +191,11 @@ class $class extends Common
 				}
 				elseif ($relation=='FK')
 				{
-					$sql="SELECT TABLE_SCHEMA, TABLE_NAME, COLUMN_NAME, REFERENCED_TABLE_SCHEMA, REFERENCED_TABLE_NAME ,REFERENCED_COLUMN_NAME FROM information_schema.KEY_COLUMN_USAGE WHERE TABLE_NAME = '".$table."' AND TABLE_SCHEMA = '".$sqlconnect->get_Database()."' AND REFERENCED_COLUMN_NAME IS NOT NULL";
+					$sqlorm="SELECT TABLE_SCHEMA, TABLE_NAME, COLUMN_NAME, REFERENCED_TABLE_SCHEMA, REFERENCED_TABLE_NAME ,REFERENCED_COLUMN_NAME FROM information_schema.KEY_COLUMN_USAGE WHERE TABLE_NAME = '".$table."' AND TABLE_SCHEMA = '".$sqlormconnect->get_Database()."' AND REFERENCED_COLUMN_NAME IS NOT NULL";
 	
-					$result = $sqlconnect->sql_query($sql);
+					$result = $sqlormconnect->sql_query($sqlorm);
 					$i=0;
-					while ($row = $sqlconnect->sql_fetch_object($result))
+					while ($row = $sqlormconnect->sql_fetch_object($result))
 					{
 						$parentvar="Parent".str_replace ( "Id" , "" , str_replace ( "id" , "" , str_replace ( "ID" , "" , $row->COLUMN_NAME )));
 						$interface[$parentvar] = array($parentvar, "ParentObject", 1, 0);
@@ -179,10 +219,10 @@ class $class extends Common
 				/* Relations for relation table of your database or foreign keys */
 				if ($table_relation_exists)
 				{
-					$sql="SELECT TABLE_SCHEMA, TABLE_NAME, COLUMN_NAME, REFERENCED_TABLE_SCHEMA, REFERENCED_TABLE_NAME ,REFERENCED_COLUMN_NAME FROM ".$relation." WHERE REFERENCED_TABLE_NAME = '".$table."'";
-					$result = $sqlconnect->sql_query($sql);
+					$sqlorm="SELECT TABLE_SCHEMA, TABLE_NAME, COLUMN_NAME, REFERENCED_TABLE_SCHEMA, REFERENCED_TABLE_NAME ,REFERENCED_COLUMN_NAME FROM ".$relation." WHERE REFERENCED_TABLE_NAME = '".$table."'";
+					$result = $sqlormconnect->sql_query($sqlorm);
 					
-					while ($row = $sqlconnect->sql_fetch_object($result))
+					while ($row = $sqlormconnect->sql_fetch_object($result))
 					{
 						$childvar=ucfirst($row->TABLE_NAME).str_replace ( "Id" , "" , str_replace ( "id" , "" , str_replace ( "ID" , "" , $row->COLUMN_NAME )));
 						$interface[$childvar] = array($childvar, "ChildObject", 1, 0);
@@ -192,9 +232,9 @@ class $class extends Common
 				}
 				elseif ($relation=='FK')
 				{
-					$sql="SELECT TABLE_SCHEMA, TABLE_NAME, COLUMN_NAME, REFERENCED_TABLE_SCHEMA, REFERENCED_TABLE_NAME, REFERENCED_COLUMN_NAME FROM information_schema.KEY_COLUMN_USAGE WHERE REFERENCED_TABLE_NAME = '".$table."' AND REFERENCED_COLUMN_NAME = '".$key."' AND TABLE_SCHEMA = '".$sqlconnect->get_Database()."'";
-					$result = $sqlconnect->sql_query($sql);
-					while ($row = $sqlconnect->sql_fetch_object($result))
+					$sqlorm="SELECT TABLE_SCHEMA, TABLE_NAME, COLUMN_NAME, REFERENCED_TABLE_SCHEMA, REFERENCED_TABLE_NAME, REFERENCED_COLUMN_NAME FROM information_schema.KEY_COLUMN_USAGE WHERE REFERENCED_TABLE_NAME = '".$table."' AND REFERENCED_COLUMN_NAME = '".$key."' AND TABLE_SCHEMA = '".$sqlormconnect->get_Database()."'";
+					$result = $sqlormconnect->sql_query($sqlorm);
+					while ($row = $sqlormconnect->sql_fetch_object($result))
 					{
 						$childvar=ucfirst($row->TABLE_NAME).str_replace ( "Id" , "" , str_replace ( "id" , "" , str_replace ( "ID" , "" , $row->COLUMN_NAME )));
 						$interface[$childvar] = array($childvar, "ChildObject", 1, 0);
@@ -237,18 +277,10 @@ class $class extends Common
 	// **********************
 	// Constructor
 	// **********************
-	function __construct (\$val = null, \$property = self::primary_key, \$database = null)
+	function __construct (\$val = null, \$property = self::primary_key)
 	{
-		if (is_null(\$database))
-		{
-		    \$this->Database = parent::sql()->Database;
-		}
-		else
-		{
-		    \$this->Database = \$database;
-		}
-
-		if(isset(\$val))
+		global $".$select.";
+		if((isset(\$val))&&(trim(\$val)!=\"\"))
 		{
 			if(\$property == self::primary_key)
 			{
@@ -258,12 +290,12 @@ class $class extends Common
 			{
 				\$val = addslashes(\$val);
 			}
+			
+			\$query = $".$select."->sql_query(\"SELECT * FROM `$class` WHERE `\$property` = \".parent::quote(\$this->structure[\$property],\$val) .\" LIMIT 1\");
 
-			\$query = parent::sql()->sql_query(\"SELECT * FROM `$class` WHERE `\$property` = \". parent::sql()->quote(\$val) .\" LIMIT 1\");
-
-			if(parent::sql()->sql_num_rows(\$query) != 0)
+			if($".$select."->sql_num_rows(\$query) != 0)
 			{
-				while(\$row = parent::sql()->sql_fetch_object(\$query))
+				while(\$row = $".$select."->sql_fetch_object(\$query))
 	            {
 	                ";
 				foreach($interface as $colomName=>$colomArray)
@@ -307,27 +339,28 @@ class $class extends Common
 	
 	$c.="public function __get( \$property )
 	{
-	    if ( is_callable( array($"."this,'get_'.(string)$"."property) ) )
+	    if ( is_callable( array(\$this,'get_'.(string)\$property) ) )
 	    {
-	        return call_user_func( array($"."this,'get_'.(string)$"."property) );
+	        return call_user_func( array(\$this,'get_'.(string)\$property) );
 	    }
-	    else {
-	        throw new DALException(\"get for \".$"."property.\" doesn't exists\");
+	    else
+	    {
+	        throw new DALException(\"get for \$property doesn't exists\");
 	    }
 	}
 	
 	public function __set( \$property, \$val )
 	{
-		if ( is_callable( array(\$this,'set_'.(string)$"."property) ) )
+		if ( is_callable( array(\$this,'set_'.(string)\$property) ) )
 		{
 			\$val = addslashes(\$val);
 
-			if ( $"."val != call_user_func( array($"."this,'get_'.(string)$"."property) ) )
+			if ( \$val != call_user_func( array(\$this,'get_'.(string)\$property) ) )
 			{
-				call_user_func( array($"."this,'set_'.(string)$"."property), $"."val );
-				$"."this->isToSaveOrToUpdate=1;
-				$"."this->structure[\$property][3]=1;
-				$"."this->structure[\$property][4] = \$val;";
+				call_user_func( array(\$this,'set_'.(string)\$property), \$val );
+				\$this->isToSaveOrToUpdate=1;
+				\$this->structure[\$property][3]=1;
+				\$this->structure[\$property][4] = \$val;";
 				if (trim($intotheset)!="")
 			$c.="
 				".trim($intotheset);
@@ -336,14 +369,14 @@ class $class extends Common
 		}
 		else
 		{
-			throw new DALException( \"set for \".$"."property.\" doesn't exists\");
+			throw new DALException( \"set for \$property doesn't exists\");
 		}
 	}
 
 	public function __isset(\$property = NULL)
     {
-        if ( is_callable( array($"."this,'get_'.(string)$"."property) ) ) {
-	        \$return = call_user_func( array($"."this,'get_'.(string)$"."property) );
+        if ( is_callable( array(\$this,'get_'.(string)\$property) ) ) {
+	        \$return = call_user_func( array(\$this,'get_'.(string)\$property) );
 
 	       	if(empty(\$return) || is_null(\$return))
 		    {
@@ -355,16 +388,16 @@ class $class extends Common
 		    }
 	    }
 	    else {
-	        throw new DALException(\"get for \".$"."property.\" doesn't exists\");
+	        throw new DALException(\"get for \$property doesn't exists\");
 	    }
     }
 
     public function __unset(\$property)
     {
-        if ( is_callable( array(\$this,'set_'.(string)$"."property) ) )
-	        return call_user_func( array($"."this,'set_'.(string)$"."property), NULL );
+        if ( is_callable( array(\$this,'set_'.(string)\$property) ) )
+	        return call_user_func( array(\$this,'set_'.(string)\$property), NULL );
 	    else
-	        throw new DALException(\"set for \".$"."property.\" doesn't exists\");
+	        throw new DALException(\"set for \$property doesn't exists\");
     }
 	
 	// **********************
@@ -384,15 +417,15 @@ class $class extends Common
 	";
 	
 	
-	$sql="SHOW COLUMNS FROM `".$table."`";
+	$sqlorm="SHOW COLUMNS FROM `".$table."`";
 	
-	$result = $sqlconnect->sql_query($sql);
-	while ($row = $sqlconnect->sql_fetch_object($result))
+	$result = $sqlormconnect->sql_query($sqlorm);
+	while ($row = $sqlormconnect->sql_fetch_object($result))
 	{
 		$col=$row->Field;
 		$c.="public function get_".$col."()
 	{
-		return htmlentities($"."this->".$col.");
+		return stripslashes(\$this->".$col.");
 	}
 	
 	";
@@ -476,18 +509,18 @@ class $class extends Common
 	
 	if ($table_relation_exists)
 	{
-		$sql="SELECT TABLE_SCHEMA, TABLE_NAME, COLUMN_NAME, REFERENCED_TABLE_SCHEMA, REFERENCED_TABLE_NAME ,REFERENCED_COLUMN_NAME FROM ".$relation." WHERE TABLE_NAME = '".$table."'";
+		$sqlorm="SELECT TABLE_SCHEMA, TABLE_NAME, COLUMN_NAME, REFERENCED_TABLE_SCHEMA, REFERENCED_TABLE_NAME ,REFERENCED_COLUMN_NAME FROM ".$relation." WHERE TABLE_NAME = '".$table."'";
 	}
 	else
 	{
-		$sql="SELECT TABLE_SCHEMA, TABLE_NAME, COLUMN_NAME, REFERENCED_TABLE_SCHEMA, REFERENCED_TABLE_NAME ,REFERENCED_COLUMN_NAME FROM information_schema.KEY_COLUMN_USAGE WHERE TABLE_NAME = '".$table."' AND TABLE_SCHEMA = '".$sqlconnect->get_Database()."' AND REFERENCED_COLUMN_NAME IS NOT NULL";
+		$sqlorm="SELECT TABLE_SCHEMA, TABLE_NAME, COLUMN_NAME, REFERENCED_TABLE_SCHEMA, REFERENCED_TABLE_NAME ,REFERENCED_COLUMN_NAME FROM information_schema.KEY_COLUMN_USAGE WHERE TABLE_NAME = '".$table."' AND TABLE_SCHEMA = '".$sqlormconnect->get_Database()."' AND REFERENCED_COLUMN_NAME IS NOT NULL";
 	}
 	
-	$result = $sqlconnect->sql_query($sql);
+	$result = $sqlormconnect->sql_query($sqlorm);
 	
-	if ($sqlconnect->sql_num_rows($result) !== 0)
+	if ($sqlormconnect->sql_num_rows($result) !== 0)
 	{	
-		while ($row = $sqlconnect->sql_fetch_object($result))
+		while ($row = $sqlormconnect->sql_fetch_object($result))
 		{
 				$varname=str_replace ( "Id" , "" , str_replace ( "id" , "" , str_replace ( "ID" , "" , $row->COLUMN_NAME )));
 				$parenttable=$row->REFERENCED_TABLE_NAME;
@@ -528,17 +561,17 @@ class $class extends Common
 	
 	if ($table_relation_exists)
 	{
-		$sql="SELECT TABLE_SCHEMA, TABLE_NAME, COLUMN_NAME, REFERENCED_TABLE_SCHEMA, REFERENCED_TABLE_NAME ,REFERENCED_COLUMN_NAME FROM ".$relation." WHERE REFERENCED_TABLE_NAME = '".$table."' AND REFERENCED_COLUMN_NAME = '".$key."'";
+		$sqlorm="SELECT TABLE_SCHEMA, TABLE_NAME, COLUMN_NAME, REFERENCED_TABLE_SCHEMA, REFERENCED_TABLE_NAME ,REFERENCED_COLUMN_NAME FROM ".$relation." WHERE REFERENCED_TABLE_NAME = '".$table."' AND REFERENCED_COLUMN_NAME = '".$key."'";
 	}
 	else
 	{
-		$sql="SELECT TABLE_SCHEMA, TABLE_NAME, COLUMN_NAME, REFERENCED_TABLE_SCHEMA, REFERENCED_TABLE_NAME, REFERENCED_COLUMN_NAME FROM information_schema.KEY_COLUMN_USAGE WHERE REFERENCED_TABLE_NAME = '".$table."' AND REFERENCED_COLUMN_NAME = '".$key."' AND TABLE_SCHEMA = '".$sqlconnect->get_Database()."'";
+		$sqlorm="SELECT TABLE_SCHEMA, TABLE_NAME, COLUMN_NAME, REFERENCED_TABLE_SCHEMA, REFERENCED_TABLE_NAME, REFERENCED_COLUMN_NAME FROM information_schema.KEY_COLUMN_USAGE WHERE REFERENCED_TABLE_NAME = '".$table."' AND REFERENCED_COLUMN_NAME = '".$key."' AND TABLE_SCHEMA = '".$sqlormconnect->get_Database()."'";
 	}
-	$result = $sqlconnect->sql_query($sql);
+	$result = $sqlormconnect->sql_query($sqlorm);
 
-	if ($sqlconnect->sql_num_rows($result)!=0)
+	if ($sqlormconnect->sql_num_rows($result)!=0)
 	{
-	while ($row = $sqlconnect->sql_fetch_object($result))
+	while ($row = $sqlormconnect->sql_fetch_object($result))
 	{
 
 		$varname=ucfirst($row->TABLE_NAME).str_replace ( "Id" , "" , str_replace ( "id" , "" , str_replace ( "ID" , "" , $row->COLUMN_NAME )));
@@ -547,7 +580,7 @@ class $class extends Common
 		$childobject=$row->TABLE_NAME;
 		$childcolumn=$row->COLUMN_NAME;
 	
-		$col = $sqlconnect->sql_primary_key($childtable);
+		$col = $sqlormconnect->sql_primary_key($childtable);
 		if (is_null($col))
 		{
 			$orderby="";
@@ -578,8 +611,8 @@ class $class extends Common
 		if ((is_null($"."this->".$varname."))&&(!is_null($"."this->$key)))
 		{
 			$"."query=".$query.";
-			$"."result=parent::sql(\ORM\SQL\SQL::read)->sql_query($"."query);
-			while($"."row = parent::sql(\ORM\SQL\SQL::read)->sql_fetch_object(\$result,'ORM\\$childobject'))
+			$"."result=$".$select."->sql_query($"."query);
+			while($"."row = $".$select."->sql_fetch_object(\$result,'ORM\\$childobject'))
 			{
 				$"."this->add_".ucfirst($varname)."($"."row);
 			}
@@ -639,18 +672,18 @@ class $class extends Common
 			}
 		
 		$"."query = ".$querydelete.";
-		parent::sql(\ORM\SQL\SQL::write)->sql_query($"."query);
-		if (parent::sql(\ORM\SQL\SQL::write)->sql_error())
+		$".$save."->sql_query($"."query);
+		if ($".$save."->sql_error())
 		{
-			$"."erreur=parent::sql(\ORM\SQL\SQL::write)->sql_error().\"<br>\".$"."query;
+			$"."erreur=$".$save."->sql_error().\"<br>\".$"."query;
 			if ($"."transaction==\"On\")
 			{
-				parent::sql(\ORM\SQL\SQL::write)->sql_rollbacktransaction();
+				$".$save."->sql_rollbacktransaction();
 			}
 			throw new DALException($"."erreur);
 		}
 		else
-			return parent::sql(\ORM\SQL\SQL::write)->sql_affected_rows();
+			return $".$save."->sql_affected_rows();
 		
 		$"."this->".ucfirst($varname)."= null;
 	}
@@ -677,24 +710,24 @@ class $class extends Common
 			{
 				$"."thistransaction=\"On\";
 				$"."transaction = \"On\";
-				if (parent::sql(\ORM\SQL\SQL::write)->TransactionMode == 1)
-					parent::sql(\ORM\SQL\SQL::write)->sql_starttransaction();
+				if ($".$save."->TransactionMode == 1)
+					$".$save."->sql_starttransaction();
 			}
 	";
 	
 	if ($table_relation_exists)
 	{
-		$sql="SELECT TABLE_SCHEMA, TABLE_NAME, COLUMN_NAME, REFERENCED_TABLE_SCHEMA, REFERENCED_TABLE_NAME ,REFERENCED_COLUMN_NAME FROM ".$relation." WHERE REFERENCED_TABLE_NAME = '".$table."' AND REFERENCED_COLUMN_NAME = '".$key."'";
+		$sqlorm="SELECT TABLE_SCHEMA, TABLE_NAME, COLUMN_NAME, REFERENCED_TABLE_SCHEMA, REFERENCED_TABLE_NAME ,REFERENCED_COLUMN_NAME FROM ".$relation." WHERE REFERENCED_TABLE_NAME = '".$table."' AND REFERENCED_COLUMN_NAME = '".$key."'";
 	}
 	else
 	{
-		$sql="SELECT TABLE_SCHEMA, TABLE_NAME, COLUMN_NAME, REFERENCED_TABLE_SCHEMA, REFERENCED_TABLE_NAME, REFERENCED_COLUMN_NAME FROM information_schema.KEY_COLUMN_USAGE WHERE REFERENCED_TABLE_NAME = '".$table."' AND REFERENCED_COLUMN_NAME = '".$key."' AND TABLE_SCHEMA = '".$sqlconnect->get_Database()."'";
+		$sqlorm="SELECT TABLE_SCHEMA, TABLE_NAME, COLUMN_NAME, REFERENCED_TABLE_SCHEMA, REFERENCED_TABLE_NAME, REFERENCED_COLUMN_NAME FROM information_schema.KEY_COLUMN_USAGE WHERE REFERENCED_TABLE_NAME = '".$table."' AND REFERENCED_COLUMN_NAME = '".$key."' AND TABLE_SCHEMA = '".$sqlormconnect->get_Database()."'";
 	}
-	$result = $sqlconnect->sql_query($sql);
+	$result = $sqlormconnect->sql_query($sqlorm);
 	
-	if ($sqlconnect->sql_num_rows($result)>0)
+	if ($sqlormconnect->sql_num_rows($result)>0)
 	{
-	while ($row = $sqlconnect->sql_fetch_object($result))
+	while ($row = $sqlormconnect->sql_fetch_object($result))
 	{
 		$varname=ucfirst($row->TABLE_NAME).str_replace ( "Id" , "" , str_replace ( "id" , "" , str_replace ( "ID" , "" , $row->COLUMN_NAME )));
 		$childtable=$row->TABLE_NAME;
@@ -713,22 +746,22 @@ class $class extends Common
 	
 	$c .= "
 				$"."query = parent::makequery('DELETE', $"."this->Database, '".$class."', $"."this->structure);
-				parent::sql(\ORM\SQL\SQL::write)->sql_query($"."query);
-				if (parent::sql(\ORM\SQL\SQL::write)->sql_error())
+				$"."Result = $".$save."->sql_query($"."query);
+				if ($".$save."->sql_error())
 				{
-					$"."erreur=parent::sql(\ORM\SQL\SQL::write)->sql_error().\"<br>\".$"."query;
-					if (parent::sql(\ORM\SQL\SQL::write)->TransactionMode == 1)
+					$"."erreur=$".$save."->sql_error().\"<br>\".$"."query;
+					if ($".$save."->TransactionMode == 1)
 					{
-						parent::sql(\ORM\SQL\SQL::write)->sql_rollbacktransaction();
+						$".$save."->sql_rollbacktransaction();
 					}
 					throw new DALException($"."erreur);
 				}
 				else
-					$"."return = parent::sql(\ORM\SQL\SQL::write)->sql_affected_rows(parent::sql());
+					$"."return = $".$save."->sql_affected_rows($"."Result);
 			}
-			if ((parent::sql(\ORM\SQL\SQL::write)->TransactionMode == 1)&&($"."thistransaction==\"On\"))
+			if (($".$save."->TransactionMode == 1)&&($"."thistransaction==\"On\"))
 			{
-				parent::sql(\ORM\SQL\SQL::write)->sql_committransaction();
+				$".$save."->sql_committransaction();
 			}
 			return $"."return;
 		}
@@ -744,6 +777,7 @@ class $class extends Common
 	
 	public function save(\$transaction = null)
 	{		
+		global $"."$save;
 		\$thistransaction = \"Off\";
 		
 		if ((is_null($"."this->".$key."))||($"."this->".$key."==0))
@@ -755,16 +789,16 @@ class $class extends Common
 	/* Parents save if some changes */
 	if ($table_relation_exists)
 	{
-		$sql="SELECT TABLE_SCHEMA, TABLE_NAME, COLUMN_NAME, REFERENCED_TABLE_SCHEMA, REFERENCED_TABLE_NAME ,REFERENCED_COLUMN_NAME FROM ".$relation." WHERE TABLE_NAME = '".$table."'";
+		$sqlorm="SELECT TABLE_SCHEMA, TABLE_NAME, COLUMN_NAME, REFERENCED_TABLE_SCHEMA, REFERENCED_TABLE_NAME ,REFERENCED_COLUMN_NAME FROM ".$relation." WHERE TABLE_NAME = '".$table."'";
 	}
 	else
 	{
-		$sql="SELECT TABLE_SCHEMA, TABLE_NAME, COLUMN_NAME, REFERENCED_TABLE_SCHEMA, REFERENCED_TABLE_NAME ,REFERENCED_COLUMN_NAME FROM information_schema.KEY_COLUMN_USAGE WHERE TABLE_NAME = '".$table."' AND TABLE_SCHEMA = '".$sqlconnect->get_Database()."' AND REFERENCED_COLUMN_NAME IS NOT NULL";
+		$sqlorm="SELECT TABLE_SCHEMA, TABLE_NAME, COLUMN_NAME, REFERENCED_TABLE_SCHEMA, REFERENCED_TABLE_NAME ,REFERENCED_COLUMN_NAME FROM information_schema.KEY_COLUMN_USAGE WHERE TABLE_NAME = '".$table."' AND TABLE_SCHEMA = '".$sqlormconnect->get_Database()."' AND REFERENCED_COLUMN_NAME IS NOT NULL";
 	}
-	$result = $sqlconnect->sql_query($sql);
-	if ($sqlconnect->sql_num_rows($result)>0)
+	$result = $sqlormconnect->sql_query($sqlorm);
+	if ($sqlormconnect->sql_num_rows($result)>0)
 	{
-	while ($row = $sqlconnect->sql_fetch_object($result))
+	while ($row = $sqlormconnect->sql_fetch_object($result))
 	{
 		$varname=str_replace ( "Id" , "" , str_replace ( "id" , "" , str_replace ( "ID" , "" , $row->COLUMN_NAME )));
 		$parenttable=$row->REFERENCED_TABLE_NAME;
@@ -785,13 +819,13 @@ class $class extends Common
 			if ((isset($"."this->$key))&&($"."this->$key!=\"0\")&&($"."this->isNew!=1))
 			{
 				\$query = parent::makequery('UPDATE', $"."this->Database, '".$class."', \$this->structure);
-				\$result=parent::sql(\ORM\SQL\SQL::write)->sql_query($"."query);
+				\$result=$".$save."->sql_query($"."query);
 			}
 			else
 			{
 				\$query = parent::makequery('INSERT', $"."this->Database, '".$class."', $"."this->structure);
-				parent::sql(\ORM\SQL\SQL::write)->sql_query($"."query);
-				\$this->$key=parent::sql(\ORM\SQL\SQL::write)->sql_insert_id();
+				$".$save."->sql_query($"."query);
+				\$this->$key=$".$save."->sql_insert_id();
 				\$this->isNew=0;
 			}
 		}
@@ -799,16 +833,16 @@ class $class extends Common
 	
 	if ($table_relation_exists)
 	{
-		$sql="SELECT TABLE_SCHEMA, TABLE_NAME, COLUMN_NAME, REFERENCED_TABLE_SCHEMA, REFERENCED_TABLE_NAME ,REFERENCED_COLUMN_NAME FROM ".$relation." WHERE REFERENCED_TABLE_NAME = '".$table."' AND REFERENCED_COLUMN_NAME = '".$key."'";
+		$sqlorm="SELECT TABLE_SCHEMA, TABLE_NAME, COLUMN_NAME, REFERENCED_TABLE_SCHEMA, REFERENCED_TABLE_NAME ,REFERENCED_COLUMN_NAME FROM ".$relation." WHERE REFERENCED_TABLE_NAME = '".$table."' AND REFERENCED_COLUMN_NAME = '".$key."'";
 	}
 	else
 	{
-		$sql="SELECT TABLE_SCHEMA, TABLE_NAME, COLUMN_NAME, REFERENCED_TABLE_SCHEMA, REFERENCED_TABLE_NAME, REFERENCED_COLUMN_NAME FROM information_schema.KEY_COLUMN_USAGE WHERE REFERENCED_TABLE_NAME = '".$table."' AND REFERENCED_COLUMN_NAME = '".$key."' AND TABLE_SCHEMA = '".$sqlconnect->get_Database()."'";
+		$sqlorm="SELECT TABLE_SCHEMA, TABLE_NAME, COLUMN_NAME, REFERENCED_TABLE_SCHEMA, REFERENCED_TABLE_NAME, REFERENCED_COLUMN_NAME FROM information_schema.KEY_COLUMN_USAGE WHERE REFERENCED_TABLE_NAME = '".$table."' AND REFERENCED_COLUMN_NAME = '".$key."' AND TABLE_SCHEMA = '".$sqlormconnect->get_Database()."'";
 	}
-	$result = $sqlconnect->sql_query($sql);
-	if ($sqlconnect->sql_num_rows($result)>0)
+	$result = $sqlormconnect->sql_query($sqlorm);
+	if ($sqlormconnect->sql_num_rows($result)>0)
 	{
-	while ($row = $sqlconnect->sql_fetch_object($result))
+	while ($row = $sqlormconnect->sql_fetch_object($result))
 	{
 		$varname=ucfirst($row->TABLE_NAME).str_replace ( "Id" , "" , str_replace ( "id" , "" , str_replace ( "ID" , "" , $row->COLUMN_NAME )));
 		$childtable=$row->TABLE_NAME;
@@ -836,8 +870,10 @@ class $class extends Common
 
 	public function last_insert(\$property = self::primary_key)
 	{
-		\$query = parent::sql()->sql_query(\"SELECT \$property AS last FROM `$class` ORDER BY \".self::primary_key.\" DESC LIMIT 1\");
-		\$last = parent::sql()->sql_fetch_row(\$query);
+		global $"."$save;
+	
+		\$query = $".$save."->sql_query(\"SELECT \$property AS last FROM `$class` ORDER BY \".self::primary_key.\" DESC LIMIT 1\");
+		\$last = $".$save."->sql_fetch_row(\$query);
 
 		return \$last[\"last\"];
 	}
@@ -979,16 +1015,16 @@ class $class extends Common
 		";
 	if ($table_relation_exists)
 	{
-		$sql="SELECT TABLE_SCHEMA, TABLE_NAME, COLUMN_NAME, REFERENCED_TABLE_SCHEMA, REFERENCED_TABLE_NAME ,REFERENCED_COLUMN_NAME FROM ".$relation." WHERE REFERENCED_TABLE_NAME = '".$table."' AND REFERENCED_COLUMN_NAME = '".$key."'";
+		$sqlorm="SELECT TABLE_SCHEMA, TABLE_NAME, COLUMN_NAME, REFERENCED_TABLE_SCHEMA, REFERENCED_TABLE_NAME ,REFERENCED_COLUMN_NAME FROM ".$relation." WHERE REFERENCED_TABLE_NAME = '".$table."' AND REFERENCED_COLUMN_NAME = '".$key."'";
 	}
 	else
 	{
-		$sql="SELECT TABLE_SCHEMA, TABLE_NAME, COLUMN_NAME, REFERENCED_TABLE_SCHEMA, REFERENCED_TABLE_NAME, REFERENCED_COLUMN_NAME FROM information_schema.KEY_COLUMN_USAGE WHERE REFERENCED_TABLE_NAME = '".$table."' AND REFERENCED_COLUMN_NAME = '".$key."' AND TABLE_SCHEMA = '".$sqlconnect->get_Database()."'";
+		$sqlorm="SELECT TABLE_SCHEMA, TABLE_NAME, COLUMN_NAME, REFERENCED_TABLE_SCHEMA, REFERENCED_TABLE_NAME, REFERENCED_COLUMN_NAME FROM information_schema.KEY_COLUMN_USAGE WHERE REFERENCED_TABLE_NAME = '".$table."' AND REFERENCED_COLUMN_NAME = '".$key."' AND TABLE_SCHEMA = '".$sqlormconnect->get_Database()."'";
 	}
-	$result = $sqlconnect->sql_query($sql);
-	if ($sqlconnect->sql_num_rows($result)>0)
+	$result = $sqlormconnect->sql_query($sqlorm);
+	if ($sqlormconnect->sql_num_rows($result)>0)
 	{
-		while ($row = $sqlconnect->sql_fetch_object($result))
+		while ($row = $sqlormconnect->sql_fetch_object($result))
 		{
 			$varname=ucfirst($row->TABLE_NAME).str_replace ( "Id" , "" , str_replace ( "id" , "" , str_replace ( "ID" , "" , $row->COLUMN_NAME )));
 			$childtable=$row->TABLE_NAME;
@@ -1009,17 +1045,17 @@ $c .= "
 	{";
 	if ($table_relation_exists)
 	{
-		$sql="SELECT TABLE_SCHEMA, TABLE_NAME, COLUMN_NAME, REFERENCED_TABLE_SCHEMA, REFERENCED_TABLE_NAME ,REFERENCED_COLUMN_NAME FROM ".$relation." WHERE REFERENCED_TABLE_NAME = '".$table."' AND REFERENCED_COLUMN_NAME = '".$key."'";
+		$sqlorm="SELECT TABLE_SCHEMA, TABLE_NAME, COLUMN_NAME, REFERENCED_TABLE_SCHEMA, REFERENCED_TABLE_NAME ,REFERENCED_COLUMN_NAME FROM ".$relation." WHERE REFERENCED_TABLE_NAME = '".$table."' AND REFERENCED_COLUMN_NAME = '".$key."'";
 	}
 	else
 	{
-		$sql="SELECT TABLE_SCHEMA, TABLE_NAME, COLUMN_NAME, REFERENCED_TABLE_SCHEMA, REFERENCED_TABLE_NAME, REFERENCED_COLUMN_NAME FROM information_schema.KEY_COLUMN_USAGE WHERE REFERENCED_TABLE_NAME = '".$table."' AND REFERENCED_COLUMN_NAME = '".$key."' AND TABLE_SCHEMA = '".$sqlconnect->get_Database()."'";
+		$sqlorm="SELECT TABLE_SCHEMA, TABLE_NAME, COLUMN_NAME, REFERENCED_TABLE_SCHEMA, REFERENCED_TABLE_NAME, REFERENCED_COLUMN_NAME FROM information_schema.KEY_COLUMN_USAGE WHERE REFERENCED_TABLE_NAME = '".$table."' AND REFERENCED_COLUMN_NAME = '".$key."' AND TABLE_SCHEMA = '".$sqlormconnect->get_Database()."'";
 	}
-	$result = $sqlconnect->sql_query($sql);
+	$result = $sqlormconnect->sql_query($sqlorm);
 	
-	if ($sqlconnect->sql_num_rows($result)>0)
+	if ($sqlormconnect->sql_num_rows($result)>0)
 	{
-		while ($row = $sqlconnect->sql_fetch_object($result))
+		while ($row = $sqlormconnect->sql_fetch_object($result))
 		{
 			$varname=ucfirst($row->TABLE_NAME).str_replace ( "Id" , "" , str_replace ( "id" , "" , str_replace ( "ID" , "" , $row->COLUMN_NAME )));
 			$childtable=$row->TABLE_NAME;
@@ -1041,5 +1077,4 @@ $c .= "
 	}
 	
 }
-
 ?>
