@@ -2,8 +2,6 @@
 
 namespace ORM;
 
-use \ORM\SQL\sql;
-
 class Common
 {	
 	private $SQLRead;
@@ -15,31 +13,23 @@ class Common
 
 	protected function sql($database = NULL)
 	{
-		if(!class_exists("sql"))
-		{
-			switch ($database) {
-				case "write" :
-					if (empty($this->SQLWrite))
-					{
-						$this->SQLWrite = new sql(SQL::write);
-					}
-					return $this->SQLWrite;
-				break;
-				default:
-					if (empty($this->SQLRead))
-					{
-						$this->SQLRead = new sql(SQL::read);
-					}
+		switch ($database) {
+			case "write" :
+				if (empty($this->SQLWrite))
+				{
+					$this->SQLWrite = new \sql(\sql::write);
+				}
+				return $this->SQLWrite;
+			break;
+			default:
+				if (empty($this->SQLRead))
+				{
+					$this->SQLRead = new \sql(\sql::read);
+				}
 
-					return $this->SQLRead;
-				break;
-			}
-		}
-		else
-		{
-			exit("Class sql not avaible");
-		}
-		
+				return $this->SQLRead;
+			break;
+		}		
 	}
 	
 	protected function makequery($type, $database, $class, $structure)
